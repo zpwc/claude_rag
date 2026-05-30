@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("d:/workplace/claude_rag/knowledge_base")
 
@@ -21,7 +21,7 @@ EXTENSIONS = {
 }
 
 print("Loading RAGEngine (both models)...", flush=True)
-from rag_engine import RAGEngine
+from src.core.rag_engine import RAGEngine
 engine = RAGEngine()
 
 # Trigger lazy init of both models upfront

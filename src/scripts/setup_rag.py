@@ -8,6 +8,9 @@ Run this once after installing dependencies:
 """
 
 import sys
+import os
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Ensure UTF-8 output on Windows consoles
 if hasattr(sys.stdout, "reconfigure"):
@@ -23,7 +26,7 @@ def main() -> None:
     print("=" * 60)
 
     # ── Import config (sets HF cache env vars as a side-effect) ───────────
-    from config import (
+    from src.core.config import (
         COLLECTION_NAME,
         EMBEDDING_MODEL_NAME,
         KNOWLEDGE_BASE_DIR,

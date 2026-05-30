@@ -1,9 +1,11 @@
 """One-time script: delete stale collections before re-indexing."""
-import sys
-sys.path.insert(0, '.')
+import sys, os
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import chromadb
+from src.core.config import VECTOR_STORE_DIR
 
-client = chromadb.PersistentClient(path='d:/workplace/claude_rag/vector_store')
+client = chromadb.PersistentClient(path=str(VECTOR_STORE_DIR))
 before = [c.name for c in client.list_collections()]
 print('Collections before:', before)
 

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from document_loader import (
+from src.core.document_loader import (
     DocumentLoadError,
     UnsupportedFileTypeError,
     load_document,

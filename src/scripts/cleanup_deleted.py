@@ -11,13 +11,13 @@ import sys
 import os
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import argparse
 import chromadb
-from config import COLLECTION_NAME, VECTOR_STORE_DIR
+from src.core.config import COLLECTION_NAME, VECTOR_STORE_DIR
 
 
 def main():

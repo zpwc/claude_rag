@@ -8,6 +8,9 @@ IMPORTANT: stdout is reserved for MCP protocol frames — never print() here.
 
 from __future__ import annotations
 
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+
 import asyncio
 import json
 import logging
@@ -31,13 +34,30 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from config import SERVER_NAME, SERVER_VERSION
-from rag_engine import RAGEngine
-from server_tools import TOOLS, dispatch
+from src.core.config import SERVER_NAME, SERVER_VERSION
+from src.core.rag_engine import RAGEngine
+from src.server.tools import TOOLS, dispatch
 
 # ── Server setup ───────────────────────────────────────────────────────────
 
-server = Server(SERVER_NAME)
+server = Server(
+    SERVER_NAME,
+    instructions=(
+        "这是一个关于海思 Hi3516CV610 芯片 SDK 代码样例和芯片文档知识的知识库，"
+        "当需要基于海思 Hi3516CV610 芯片编写代码和查询芯片相关的内容可以使用该知识库。"
+        "Hi3516CV610 通常会简称为 CV610 或泛指海思视觉芯片。\n\n"
+        "主要工具：\n"
+        "• search_knowledge_base / search_docs / search_code — 语义检索文档或代码\n"
+        "• search_symbol — 按符号名精确检索（函数/类/宏）\n"
+        "• grep_code — 正则全文搜索源文件\n"
+        "• get_file / get_chunk_context — 读取完整文件或指定 chunk 的上下文\n"
+        "• ingest_document / ingest_directory — 向知识库添加文件\n"
+        "• list_documents / list_code_files — 列出已索引内容\n"
+        "• delete_document — 从知识库删除文件\n"
+        "检索建议：先用 search_knowledge_base 做宽泛语义检索，"
+        "再用 grep_code 或 search_symbol 定位具体符号/行号。"
+    ),
+)
 
 _engine: RAGEngine | None = None
 

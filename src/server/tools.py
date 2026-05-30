@@ -1,13 +1,16 @@
 """
 Shared MCP tool definitions and dispatch logic.
-Both server.py (stdio) and server_http.py (SSE) import from here.
+Both stdio.py and http.py import from here.
 """
 
 from __future__ import annotations
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 from mcp import types
 
-from config import DEFAULT_TOP_K
+from src.core.config import DEFAULT_TOP_K
 
 # ── Tool definitions ───────────────────────────────────────────────────────
 

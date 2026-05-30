@@ -1,22 +1,63 @@
 """
 Central configuration for the local RAG knowledge base.
 All modules import from here; nothing hardcodes paths or model names elsewhere.
+
+Priority for every setting: env var  >  claude_rag.toml  >  built-in default
 """
 
 import os
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).parent.resolve()
+BASE_DIR = Path(__file__).parent.parent.parent.resolve()  # project root
 VECTOR_STORE_DIR = BASE_DIR / "vector_store"
 MODELS_CACHE_DIR = BASE_DIR / "models_cache"
 KNOWLEDGE_BASE_DIR = BASE_DIR / "knowledge_base"
+
+# ── TOML config loader ─────────────────────────────────────────────────────
+
+def _load_toml() -> dict:
+    try:
+        import tomllib          # Python 3.11+
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return {}
+    path = BASE_DIR / "claude_rag.toml"
+    if not path.exists():
+        return {}
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+_TOML = _load_toml()
+
+
+def _get(env_var: str, section: str, key: str, default: str) -> str:
+    v = os.getenv(env_var)
+    if v is not None:
+        return v
+    return str(_TOML.get(section, {}).get(key, default))
+
+
+def _get_int(env_var: str, section: str, key: str, default: int) -> int:
+    v = os.getenv(env_var)
+    if v is not None:
+        return int(v)
+    return int(_TOML.get(section, {}).get(key, default))
+
+
+def _get_bool(env_var: str, section: str, key: str, default: bool) -> bool:
+    v = os.getenv(env_var)
+    if v is not None:
+        return v.lower() == "true"
+    return bool(_TOML.get(section, {}).get(key, default))
+
 
 # ── Embedding models ───────────────────────────────────────────────────────
 # Text model: bilingual CN+EN, ~400 MB, 768-dim
 EMBEDDING_MODEL_NAME = "BAAI/bge-base-zh-v1.5"
 # Code model: trained on CodeSearchNet, 768-dim, ~330MB, works with transformers 5.x
-# jina-embeddings-v2-base-code requires transformers 4.x (incompatible with 5.x)
 CODE_EMBEDDING_MODEL_NAME = "flax-sentence-embeddings/st-codesearch-distilroberta-base"
 
 # ── ChromaDB collections ───────────────────────────────────────────────────
@@ -81,6 +122,25 @@ CODE_EXTENSIONS = {
 # ── MCP server identity ────────────────────────────────────────────────────
 SERVER_NAME = "local-rag-kb"
 SERVER_VERSION = "2.0.0"
+
+# ── HTTP server ────────────────────────────────────────────────────────────
+SERVER_HOST = _get    ("SERVER_HOST", "server", "host", "0.0.0.0")
+SERVER_PORT = _get_int("SERVER_PORT", "server", "port", 8765)
+
+# ── LLM Synthesis ──────────────────────────────────────────────────────────
+# SYNTHESIS_BACKEND: deepseek | qianwen | ollama | claude | openai | custom
+SYNTHESIS_BACKEND = _get    ("SYNTHESIS_BACKEND", "llm", "backend",    "")
+LLM_API_KEY       = _get    ("LLM_API_KEY",       "llm", "api_key",    "")
+LLM_BASE_URL      = _get    ("LLM_BASE_URL",       "llm", "base_url",   "")
+LLM_MODEL         = _get    ("LLM_MODEL",          "llm", "model",      "")
+LLM_MAX_TOKENS    = _get_int("LLM_MAX_TOKENS",     "llm", "max_tokens", 1024)
+
+# ── Reranking ──────────────────────────────────────────────────────────────
+USE_RERANKING  = _get_bool("USE_RERANKING",  "reranking", "enabled", True)
+RERANKER_MODEL = _get     ("RERANKER_MODEL", "reranking", "model",
+                            "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
+RERANK_FETCH_K = _get_int ("RERANK_FETCH_K", "reranking", "fetch_k", 20)
+RERANK_FINAL_K = _get_int ("RERANK_FINAL_K", "reranking", "final_k", 5)
 
 # ── HuggingFace cache (set early so imports pick it up) ───────────────────
 os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(MODELS_CACHE_DIR))

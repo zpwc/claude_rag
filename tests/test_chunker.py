@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from chunker import chunk_text
+from src.core.chunker import chunk_text
 
 
 class TestChunkText:

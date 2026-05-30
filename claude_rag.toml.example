@@ -1,0 +1,64 @@
+# claude_rag.toml — Local RAG Knowledge Base Configuration
+#
+# Copy this file to claude_rag.toml and fill in your settings.
+# Priority: environment variable  >  this file  >  built-in default
+# (env vars always win, so you can override individual settings without editing this file)
+
+# ── LLM Synthesis ─────────────────────────────────────────────────────────
+[llm]
+
+# Provider to use for AI answer synthesis.
+# Options: deepseek | qianwen | ollama | openai | claude | custom
+backend = "deepseek"
+
+# API key for the chosen provider.
+# DeepSeek:  https://platform.deepseek.com
+# Qianwen:   https://dashscope.console.aliyun.com
+# OpenAI:    https://platform.openai.com
+# Claude:    https://console.anthropic.com
+# Ollama:    (no key needed — leave empty)
+api_key = ""
+
+# Model name. Leave empty to use the provider's built-in default:
+#   deepseek → deepseek-chat
+#   qianwen  → qwen-plus
+#   ollama   → qwen2.5:7b
+#   openai   → gpt-4o-mini
+#   claude   → claude-haiku-4-5-20251001
+model = ""
+
+# Custom API endpoint (OpenAI-compatible).
+# Required for:  backend = "custom"
+# Optional for:  backend = "ollama"  (default: http://localhost:11434/v1)
+# Leave empty for all other providers.
+base_url = ""
+
+# Maximum tokens in the LLM response.
+max_tokens = 1024
+
+
+# ── Reranking ──────────────────────────────────────────────────────────────
+[reranking]
+
+# Enable CrossEncoder reranking (improves answer quality, adds ~1-2s latency).
+enabled = true
+
+# CrossEncoder model (downloaded automatically on first use, ~200 MB).
+# Multilingual model — works well for Chinese + English mixed content.
+model = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+
+# Number of candidates to retrieve before reranking.
+fetch_k = 20
+
+# Number of top results to pass to the LLM after reranking.
+final_k = 5
+
+
+# ── HTTP Server ────────────────────────────────────────────────────────────
+[server]
+
+# Address to bind. Use "0.0.0.0" to accept LAN connections, "127.0.0.1" for local only.
+host = "0.0.0.0"
+
+# Port number. Also configurable with --port on the command line.
+port = 8765

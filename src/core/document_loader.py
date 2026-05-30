@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Union
 
-from config import CODE_EXTENSIONS, SUPPORTED_EXTENSIONS
+from .config import CODE_EXTENSIONS, SUPPORTED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 

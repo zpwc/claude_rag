@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 
-from rag_engine import RAGEngine
+from src.core.rag_engine import RAGEngine
 
 
 @pytest.mark.slow

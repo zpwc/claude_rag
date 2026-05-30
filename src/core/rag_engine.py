@@ -15,8 +15,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from chunker import chunk_document
-from config import (
+from .chunker import chunk_document
+from .config import (
     BM25_TOP_K,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
@@ -31,15 +31,36 @@ from config import (
     MAX_TOP_K,
     MIN_CHUNK_LENGTH,
     MODELS_CACHE_DIR,
+    RERANK_FETCH_K,
+    RERANK_FINAL_K,
     SUPPORTED_EXTENSIONS,
     TEXT_COLLECTION_NAME,
     TEXT_FILE_TYPES,
     VECTOR_STORE_DIR,
 )
-from document_loader import load_document
+from .document_loader import load_document
+
+import re as _re
+
+def _normalize_source_path(stored: str) -> str:
+    """Return a portable relative path from a stored source_path.
+
+    Handles two formats:
+    - Already relative: returned as-is (forward slashes)
+    - Legacy absolute (Windows or Linux): extracts the portion after 'knowledge_base'
+    """
+    p = Path(stored)
+    if not p.is_absolute():
+        return stored.replace("\\", "/")
+    # Absolute path — extract relative part after knowledge_base anchor
+    normalized = stored.replace("\\", "/")
+    m = _re.search(r"(?:^|/)knowledge_base/(.*)", normalized)
+    if m:
+        return m.group(1)
+    return stored.replace("\\", "/")
 
 try:
-    from bm25_engine import BM25Index
+    from .bm25_engine import BM25Index
     _BM25_AVAILABLE = True
 except ImportError:
     _BM25_AVAILABLE = False
@@ -73,6 +94,7 @@ class RAGEngine:
         self._text_collection = None
         self._code_collection = None
         self._bm25_index: "BM25Index | None" = None
+        self._text_bm25_index: "BM25Index | None" = None
         self._chroma_client = None
         self._lock = threading.Lock()
 
@@ -228,7 +250,7 @@ class RAGEngine:
         metadatas = [
             {
                 "doc_name": doc_name,
-                "source_path": meta["source_path"],
+                "source_path": _normalize_source_path(meta["source_path"]),
                 "file_type": file_type,
                 "chunk_index": i,
                 "total_chunks": len(chunks),
@@ -252,6 +274,8 @@ class RAGEngine:
 
         if file_type in CODE_FILE_TYPES and self._bm25_index is not None:
             self._bm25_index = None  # rebuild on next search_code() call
+        if file_type in TEXT_FILE_TYPES and self._text_bm25_index is not None:
+            self._text_bm25_index = None  # rebuild on next search_docs() call
 
         logger.info("Ingested '%s': %d chunks → %s.", doc_name, len(chunks),
                     self._code_collection_name if file_type in CODE_FILE_TYPES
@@ -333,7 +357,7 @@ class RAGEngine:
                 {
                     "content": doc,
                     "doc_name": meta.get("doc_name", ""),
-                    "source_path": meta.get("source_path", ""),
+                    "source_path": _normalize_source_path(meta.get("source_path", "")),
                     "file_type": meta.get("file_type", ""),
                     "chunk_index": meta.get("chunk_index", 0),
                     "total_chunks": meta.get("total_chunks", 1),
@@ -371,7 +395,7 @@ class RAGEngine:
             {
                 "content": doc,
                 "doc_name": meta.get("doc_name", ""),
-                "source_path": meta.get("source_path", ""),
+                "source_path": _normalize_source_path(meta.get("source_path", "")),
                 "file_type": meta.get("file_type", ""),
                 "chunk_index": meta.get("chunk_index", 0),
                 "total_chunks": meta.get("total_chunks", 1),
@@ -392,24 +416,28 @@ class RAGEngine:
         bm25_hits = self._bm25_index.search(query, top_k=BM25_TOP_K)
         return self._rrf_merge(vector_hits, bm25_hits, top_k=top_k)
 
-    def search_docs(self, query: str, top_k: int = DEFAULT_TOP_K) -> list[dict]:
-        """Search only the text collection (kb_text) using the text model."""
+    def search_docs(
+        self, query: str, top_k: int = DEFAULT_TOP_K, use_bm25: bool = True
+    ) -> list[dict]:
+        """Search kb_text using vector search, optionally hybrid with BM25+RRF."""
         self._ensure_initialized()
         top_k = max(1, min(top_k, MAX_TOP_K))
-        n = min(top_k, self._text_collection.count())
+        fetch_k = BM25_TOP_K if (use_bm25 and _BM25_AVAILABLE) else top_k
+        n = min(fetch_k, self._text_collection.count())
         if n == 0:
             return []
+
         emb = self._embed([query], self._text_model)[0]
         raw = self._text_collection.query(
             query_embeddings=[emb],
             n_results=n,
             include=["documents", "metadatas", "distances"],
         )
-        return [
+        vector_hits = [
             {
                 "content": doc,
                 "doc_name": meta.get("doc_name", ""),
-                "source_path": meta.get("source_path", ""),
+                "source_path": _normalize_source_path(meta.get("source_path", "")),
                 "file_type": meta.get("file_type", ""),
                 "chunk_index": meta.get("chunk_index", 0),
                 "total_chunks": meta.get("total_chunks", 1),
@@ -420,6 +448,32 @@ class RAGEngine:
                 raw["documents"][0], raw["metadatas"][0], raw["distances"][0]
             )
         ]
+
+        if not (use_bm25 and _BM25_AVAILABLE):
+            return vector_hits[:top_k]
+
+        if self._text_bm25_index is None:
+            self._text_bm25_index = BM25Index(self._text_collection)
+
+        bm25_hits = self._text_bm25_index.search(query, top_k=BM25_TOP_K)
+        return self._rrf_merge(vector_hits, bm25_hits, top_k=top_k)
+
+    def search_with_rerank(
+        self,
+        query: str,
+        fetch_k: int = RERANK_FETCH_K,
+        final_k: int = RERANK_FINAL_K,
+        reranker=None,
+    ) -> list[dict]:
+        """Vector search over both collections → optional CrossEncoder rerank.
+
+        fetch_k candidates are retrieved first; if reranker is provided they are
+        rescored and trimmed to final_k. Without reranker, returns top final_k.
+        """
+        candidates = self.search(query, top_k=fetch_k)
+        if reranker is not None and len(candidates) > 1:
+            return reranker.rerank(query, candidates, top_k=final_k)
+        return candidates[:final_k]
 
     def list_documents(self) -> list[dict]:
         """List unique documents across both collections."""
@@ -438,7 +492,7 @@ class RAGEngine:
                 if name not in seen:
                     seen[name] = {
                         "doc_name": name,
-                        "source_path": meta.get("source_path", ""),
+                        "source_path": _normalize_source_path(meta.get("source_path", "")),
                         "file_type": meta.get("file_type", ""),
                         "chunk_count": 1,
                         "collection": coll_name,
@@ -522,7 +576,7 @@ class RAGEngine:
                 "total_chunks": m.get("total_chunks", 1),
                 "content": doc,
                 "doc_name": m.get("doc_name", ""),
-                "source_path": m.get("source_path", ""),
+                "source_path": _normalize_source_path(m.get("source_path", "")),
                 "file_type": m.get("file_type", ""),
             }
             for doc, m in pairs
@@ -562,7 +616,7 @@ class RAGEngine:
             for doc, meta in zip(result["documents"], result["metadatas"]):
                 hits.append({
                     "doc_name": meta.get("doc_name", ""),
-                    "source_path": meta.get("source_path", ""),
+                    "source_path": _normalize_source_path(meta.get("source_path", "")),
                     "file_type": meta.get("file_type", ""),
                     "chunk_index": meta.get("chunk_index", 0),
                     "content": doc,
@@ -589,7 +643,7 @@ class RAGEngine:
             if name not in seen:
                 seen[name] = {
                     "doc_name": name,
-                    "source_path": meta.get("source_path", ""),
+                    "source_path": _normalize_source_path(meta.get("source_path", "")),
                     "file_type": ft,
                     "chunk_count": 1,
                 }

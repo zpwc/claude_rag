@@ -22,26 +22,26 @@ A local retrieval-augmented generation (RAG) knowledge base exposed as an **MCP 
 Documents / Source Code
         │
         ▼
-  document_loader.py          # PDF (pdfplumber), DOCX, TXT, MD, code files
+  src/core/document_loader.py   # PDF (pdfplumber), DOCX, TXT, MD, code files
         │
         ▼
-    chunker.py                # Language-aware splitting
+  src/core/chunker.py           # Language-aware splitting
         │
    ┌────┴────┐
    ▼         ▼
-kb_text    kb_code            # ChromaDB collections (cosine, HNSW)
+kb_text    kb_code              # ChromaDB collections (cosine, HNSW)
    │         │
-bge-base  st-codesearch       # Local embedding models (768-dim each)
+bge-base  st-codesearch         # Local embedding models (768-dim each)
    │         │
    └────┬────┘
         ▼
-  rag_engine.py               # Search, BM25+RRF, normalization
+  src/core/rag_engine.py        # Search, BM25+RRF, normalization
         │
-  server_tools.py             # MCP tool definitions + dispatch
+  src/server/tools.py           # MCP tool definitions + dispatch
         │
    ┌────┴────┐
    ▼         ▼
-server.py  server_http.py     # stdio / HTTP SSE transports
+stdio.py   serve.py             # stdio / HTTP SSE transports
 ```
 
 ---
@@ -113,20 +113,20 @@ knowledge_base/
 ### 2. Index everything
 
 ```bash
-python reingest_fast.py knowledge_base/
+python src/scripts/reingest_fast.py knowledge_base/
 ```
 
 ### 3. Start the server
 
 **stdio** (for Claude Desktop on the same machine):
 ```bash
-python server.py
+python src/server/stdio.py
 ```
 
 **HTTP SSE** (for LAN access):
 ```bash
-python server_http.py              # listens on 0.0.0.0:8765
-python server_http.py --port 9000  # custom port
+python src/server/serve.py              # listens on 0.0.0.0:8765
+python src/server/serve.py --port 9000  # custom port
 ```
 
 Graceful shutdown (prevents HNSW index corruption):
@@ -184,20 +184,57 @@ Vector missed it      →  grep_code      (disk regex, guaranteed recall)
 ## Project Structure
 
 ```
-├── config.py              # All constants: paths, models, chunk sizes
-├── document_loader.py     # PDF/DOCX/TXT/MD/code loaders
-├── chunker.py             # Language-aware chunking
-├── bm25_engine.py         # BM25 index + tokenizer for code
-├── rag_engine.py          # Core: ingest, search, BM25+RRF, normalization
-├── server_tools.py        # MCP tool definitions and dispatch
-├── server.py              # stdio MCP transport
-├── server_http.py         # HTTP SSE MCP transport
-├── reingest_fast.py       # Fast single-process re-indexer
-├── setup_rag.py           # First-time setup helper
-├── tests/                 # pytest test suite
-├── .mcp.json.example      # stdio config template
-└── .mcp.remote.json.example  # SSE config template
+claude_rag/
+│
+├── src/                                  # 全部业务源码
+│   ├── core/                             # 核心引擎（无 MCP 依赖，可独立测试）
+│   │   ├── config.py                     # 全局常量：路径、模型名、chunk 参数、集合名
+│   │   ├── document_loader.py            # 文件解析：PDF(pdfplumber)、DOCX、TXT、MD、代码文件
+│   │   ├── chunker.py                    # 语言感知切片：C/C++ 花括号状态机、Python AST、
+│   │   │                                 #   Markdown 标题、INI 节、滑窗
+│   │   ├── bm25_engine.py                # BM25 关键词索引，对 kb_code 全量构建，
+│   │   │                                 #   与向量检索 RRF 融合
+│   │   └── rag_engine.py                 # 主引擎：文件入库、向量化、双集合检索、
+│   │                                     #   BM25+RRF、分数归一化
+│   │
+│   ├── server/                           # MCP 服务器层（依赖 core，对外暴露工具）
+│   │   ├── tools.py                      # 12 个 MCP 工具的 schema 定义 + dispatch 路由
+│   │   ├── stdio.py                      # stdio 传输入口，供 Claude Desktop 本机启动
+│   │   └── serve.py                      # HTTP SSE 传输入口，供局域网远程访问
+│   │                                     #   （默认 0.0.0.0:8765）
+│   │
+│   └── scripts/                          # 运维脚本（手动执行，不参与服务启动）
+│       ├── reingest_fast.py              # 全量重建索引，单进程加载模型后批量处理所有文件
+│       ├── cleanup_collections.py        # 删除 ChromaDB 集合（重建前清空用）
+│       ├── cleanup_deleted.py            # 扫描 source_path 已失效的 chunk 并删除
+│       └── setup_rag.py                  # 首次安装引导：检查依赖、创建目录、预下载模型
+│
+├── tests/                                # pytest 测试套件
+│   ├── test_chunker.py                   # chunker 单元测试（纯 Python，无外部依赖）
+│   ├── test_document_loader.py           # document_loader 单元测试（含 PDF/DOCX 解析）
+│   ├── test_rag_engine.py                # rag_engine 单元测试（mock embed，隔离模型）
+│   └── test_integration.py              # 集成测试（真实 ChromaDB，tmp_path 隔离）
+│
+├── knowledge_base/                       # 知识库素材目录（gitignore，不入库）
+├── vector_store/                         # ChromaDB 持久化数据（gitignore，不入库）
+├── models_cache/                         # 本地模型缓存（gitignore，不入库）
+│
+├── .mcp.json.example                     # stdio 客户端配置模板
+├── .mcp.remote.json.example              # SSE 客户端配置模板
+├── requirements.txt                      # Python 依赖
+└── README.md                             # 项目文档
 ```
+
+### Common Commands
+
+| Operation | Command |
+|-----------|---------|
+| Start LAN server | `python src/server/serve.py` |
+| Start local server | `python src/server/stdio.py` |
+| Re-index knowledge base | `python src/scripts/reingest_fast.py knowledge_base/` |
+| Clear collections | `python src/scripts/cleanup_collections.py` |
+| Remove stale index entries | `python src/scripts/cleanup_deleted.py --delete` |
+| Run tests | `python -m pytest tests/ -v` |
 
 ---
 

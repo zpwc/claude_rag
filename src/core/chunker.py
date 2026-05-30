@@ -17,7 +17,7 @@ import ast
 import re
 from typing import Optional
 
-from config import (
+from .config import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     CODE_CHUNK_SIZE,

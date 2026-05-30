@@ -2,9 +2,9 @@
 HTTP SSE MCP server — 供局域网其他用户访问。
 
 启动方式：
-    python server_http.py              # 默认监听 0.0.0.0:8765
-    python server_http.py --port 9000  # 自定义端口
-    python server_http.py --host 127.0.0.1  # 仅本机
+    python src/server/serve.py              # 默认监听 0.0.0.0:8765
+    python src/server/serve.py --port 9000  # 自定义端口
+    python src/server/serve.py --host 127.0.0.1  # 仅本机
 
 远程客户端在 .mcp.json 中配置：
     {
@@ -19,7 +19,11 @@ HTTP SSE MCP server — 供局域网其他用户访问。
 
 from __future__ import annotations
 
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
+
 import argparse
+from pathlib import Path
 import asyncio
 import logging
 import os
@@ -48,14 +52,34 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 
-from config import SERVER_NAME, SERVER_VERSION
-from rag_engine import RAGEngine
-from server_tools import TOOLS, dispatch
+from src.server.ui import UI_ROUTES
+
+from src.core.config import SERVER_NAME, SERVER_VERSION, SERVER_HOST, SERVER_PORT
+from src.core.rag_engine import RAGEngine
+from src.server.tools import TOOLS, dispatch
 
 # ── MCP Server ─────────────────────────────────────────────────────────────
 
-server = Server(SERVER_NAME)
+server = Server(
+    SERVER_NAME,
+    instructions=(
+        "这是一个关于海思 Hi3516CV610 芯片 SDK 代码样例和芯片文档知识的知识库，"
+        "当需要基于海思 Hi3516CV610 芯片编写代码和查询芯片相关的内容可以使用该知识库。"
+        "Hi3516CV610 通常会简称为 CV610 或泛指海思视觉芯片。\n\n"
+        "主要工具：\n"
+        "• search_knowledge_base / search_docs / search_code — 语义检索文档或代码\n"
+        "• search_symbol — 按符号名精确检索（函数/类/宏）\n"
+        "• grep_code — 正则全文搜索源文件\n"
+        "• get_file / get_chunk_context — 读取完整文件或指定 chunk 的上下文\n"
+        "• ingest_document / ingest_directory — 向知识库添加文件\n"
+        "• list_documents / list_code_files — 列出已索引内容\n"
+        "• delete_document — 从知识库删除文件\n"
+        "检索建议：先用 search_knowledge_base 做宽泛语义检索，"
+        "再用 grep_code 或 search_symbol 定位具体符号/行号。"
+    ),
+)
 
 _engine: RAGEngine | None = None
 
@@ -91,6 +115,9 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
 # ── Starlette / SSE app ────────────────────────────────────────────────────
 
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
 def build_app() -> Starlette:
     sse_transport = SseServerTransport("/messages/")
 
@@ -121,14 +148,23 @@ def build_app() -> Starlette:
         asyncio.create_task(_do_exit())
         return Response("shutting down", status_code=200)
 
-    return Starlette(
+    extra_routes = []
+    if _STATIC_DIR.exists():
+        extra_routes = UI_ROUTES + [
+            Mount("/assets", app=StaticFiles(directory=str(_STATIC_DIR / "assets")), name="assets"),
+            Mount("/static", app=StaticFiles(directory=str(_STATIC_DIR)), name="static"),
+        ]
+
+    app = Starlette(
         routes=[
             Route("/sse", endpoint=handle_sse, methods=["GET"]),
             Mount("/messages/", app=sse_transport.handle_post_message),
             Route("/health", endpoint=lambda r: Response("ok"), methods=["GET"]),
             Route("/shutdown", endpoint=handle_shutdown, methods=["POST"]),
-        ]
+        ] + extra_routes
     )
+    app.state.engine = get_engine()
+    return app
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
@@ -137,10 +173,10 @@ def main() -> None:
     import signal
 
     parser = argparse.ArgumentParser(description="RAG Knowledge Base MCP HTTP Server")
-    parser.add_argument("--host", default="0.0.0.0",
-                        help="Bind address (default: 0.0.0.0 = all interfaces)")
-    parser.add_argument("--port", type=int, default=8765,
-                        help="Port to listen on (default: 8765)")
+    parser.add_argument("--host", default=SERVER_HOST,
+                        help=f"Bind address (default: {SERVER_HOST})")
+    parser.add_argument("--port", type=int, default=SERVER_PORT,
+                        help=f"Port to listen on (default: {SERVER_PORT})")
     args = parser.parse_args()
 
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
