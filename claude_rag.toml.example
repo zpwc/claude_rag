@@ -72,3 +72,19 @@ host = "0.0.0.0"
 
 # Port number. Also configurable with --port on the command line.
 port = 8765
+
+
+# ── Auth (SSE / REST API 鉴权) ───────────────────────────────────────────────
+[auth]
+
+# Enable shared-API-key auth for the HTTP server. Default: false (向后兼容，所有端点开放)。
+# 启用后，受保护路径（/sse、/messages/、/api/*、/shutdown）需携带：
+#   • 请求头 x-api-key: <key>，或
+#   • 查询参数 ?api_key=<key>
+# 公开路径始终放行：/health、/ui、/assets/*、/static/*
+# Stdio 模式（本地子进程）不经过 HTTP 层，不受影响。
+enabled = false
+
+# 共享密钥。建议用 `openssl rand -hex 32` 生成。
+# 也可用环境变量 AUTH_API_KEY 注入（env 优先于本文件），避免写进配置文件。
+api_key = ""

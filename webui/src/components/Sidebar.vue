@@ -25,6 +25,19 @@
       </template>
     </div>
 
+    <div class="settings">
+      <label class="settings-label" for="max-tokens">回答 Token 上限</label>
+      <input
+        id="max-tokens"
+        type="number"
+        min="1"
+        class="settings-input"
+        placeholder="服务端默认"
+        :value="store.maxTokens || ''"
+        @change="onMaxTokens"
+      />
+    </div>
+
     <div class="stats" v-if="stats">
       <span>文档 {{ stats.kb_text }} chunks</span>
       <span>代码 {{ stats.kb_code }} chunks</span>
@@ -41,10 +54,14 @@ const stats = ref(null)
 
 onMounted(async () => {
   try {
-    const r = await fetch('/api/stats')
-    stats.value = await r.json()
+    const r = await store.fetchWithAuth('/api/stats')
+    if (r.ok) stats.value = await r.json()
   } catch (_) {}
 })
+
+function onMaxTokens(e) {
+  store.setMaxTokens(e.target.value)
+}
 
 const grouped = computed(() => {
   const today = new Date(); today.setHours(0,0,0,0)
@@ -157,4 +174,27 @@ const grouped = computed(() => {
   font-size: 11px;
   color: #666;
 }
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+.settings-label {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.settings-input {
+  padding: 6px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  outline: none;
+  width: 100%;
+}
+.settings-input:focus { border-color: #4a90d9; }
 </style>

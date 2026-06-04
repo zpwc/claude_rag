@@ -56,10 +56,13 @@ from starlette.staticfiles import StaticFiles
 
 from src.server.ui import UI_ROUTES
 
-from src.core.config import SERVER_NAME, SERVER_VERSION, SERVER_HOST, SERVER_PORT
+from src.core.config import (
+    SERVER_NAME, SERVER_VERSION, SERVER_HOST, SERVER_PORT,
+    AUTH_ENABLED, AUTH_API_KEY,
+)
 from src.core.rag_engine import RAGEngine
 from src.server.tools import TOOLS, dispatch
-from src.server.auth_middleware import BearerTokenMiddleware
+from src.server.auth import AuthMiddleware
 
 # ── MCP Server ─────────────────────────────────────────────────────────────
 
@@ -166,17 +169,19 @@ def build_app() -> Starlette:
     )
     app.state.engine = get_engine()
 
-    # ── Bearer token auth (方案一) ────────────────────────────────────────
-    # 仅当设置了 MCP_TOKEN 环境变量时启用，保持默认（无 token）启动向后兼容。
-    # token 从环境变量读取，绝不写死在代码里 / 提交进 git。
-    token = os.environ.get("MCP_TOKEN")
-    if token:
-        app = BearerTokenMiddleware(app, token=token)
-        logger.info("Bearer token auth ENABLED — clients must send 'Authorization: Bearer <token>'")
+    # ── API Key auth ──────────────────────────────────────────────────────
+    # 默认关闭（向后兼容）；AUTH_ENABLED=true 时用纯 ASGI 中间件包裹整个 app，
+    # 对受保护路径（/sse、/messages/、/api/*、/shutdown）校验 x-api-key。
+    if AUTH_ENABLED:
+        if not AUTH_API_KEY:
+            logger.warning(
+                "AUTH_ENABLED=true 但 AUTH_API_KEY 未配置 —— 所有受保护路径将一律拒绝（401）。"
+                "请在 claude_rag.toml [auth] 或环境变量 AUTH_API_KEY 中设置密钥。"
+            )
+        app = AuthMiddleware(app, api_key=AUTH_API_KEY)
+        logger.info("API key auth ENABLED — protected paths require 'x-api-key' header or '?api_key='")
     else:
-        logger.warning(
-            "Bearer token auth DISABLED — set MCP_TOKEN to require 'Authorization: Bearer <token>'"
-        )
+        logger.info("API key auth DISABLED (AUTH_ENABLED=false) — all endpoints open")
 
     return app
 

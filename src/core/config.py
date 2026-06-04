@@ -131,6 +131,12 @@ SERVER_VERSION = "2.0.0"
 SERVER_HOST = _get    ("SERVER_HOST", "server", "host", "0.0.0.0")
 SERVER_PORT = _get_int("SERVER_PORT", "server", "port", 8765)
 
+# ── Auth (SSE / REST API 鉴权) ─────────────────────────────────────────────
+# 默认关闭，向后兼容。可通过 claude_rag.toml 的 [auth] 节或环境变量覆盖。
+# 启用后，受保护路径需携带 x-api-key 请求头（或 ?api_key= 查询参数）。
+AUTH_ENABLED = _get_bool("AUTH_ENABLED", "auth", "enabled", False)
+AUTH_API_KEY = _get     ("AUTH_API_KEY", "auth", "api_key", "")
+
 # ── LLM Synthesis ──────────────────────────────────────────────────────────
 # SYNTHESIS_BACKEND: deepseek | qianwen | ollama | claude | openai | custom
 # No env-var override — only server admin can change via claude_rag.toml.

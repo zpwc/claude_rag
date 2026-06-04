@@ -70,6 +70,21 @@ def _sse(type: str, **kwargs) -> str:  # noqa: A002
     return f"data: {json.dumps({'type': type, **kwargs}, ensure_ascii=False)}\n\n"
 
 
+def _effective_max_tokens(max_tokens: int | None) -> int:
+    """把客户端传入的 max_tokens 限制在 [1, LLM_MAX_TOKENS] 范围内。
+
+    客户端不传（None）或非法值时回退到服务端默认上限 LLM_MAX_TOKENS。
+    服务端上限始终是硬封顶：客户端无法借此申请超过配额的 token。
+    """
+    if max_tokens is None:
+        return LLM_MAX_TOKENS
+    try:
+        requested = int(max_tokens)
+    except (TypeError, ValueError):
+        return LLM_MAX_TOKENS
+    return max(1, min(requested, LLM_MAX_TOKENS))
+
+
 def _build_context(docs: list[dict]) -> str:
     parts = []
     for d in docs:
@@ -151,8 +166,18 @@ class LLMSynthesizer:
             return LLM_MODEL
         return PROVIDER_DEFAULTS.get(self._backend, {}).get("model", "")
 
-    async def stream(self, query: str, docs: list[dict], history: list[dict] | None = None):
+    async def stream(
+        self,
+        query: str,
+        docs: list[dict],
+        history: list[dict] | None = None,
+        max_tokens: int | None = None,
+    ):
         """Async generator yielding SSE lines.
+
+        Args:
+            max_tokens: 客户端期望的输出 token 上限；服务端会封顶到 LLM_MAX_TOKENS。
+                        None 时使用服务端默认值。
 
         Yields:
             str: SSE-formatted lines ("data: {...}\\n\\n")
@@ -164,19 +189,20 @@ class LLMSynthesizer:
         try:
             self._ensure_client()
             model = self._resolve_model()
+            effective_max_tokens = _effective_max_tokens(max_tokens)
             context = _build_context(docs)
             user_content = f"问题：{query}\n\n上下文：\n{context}"
 
             # Build message list: prior turns + current query
             messages = _build_messages(history, user_content)
 
-            logger.info("LLM synthesis — backend=%s model=%s docs=%d history=%d",
-                        self._backend, model, len(docs), len(messages) - 1)
+            logger.info("LLM synthesis — backend=%s model=%s docs=%d history=%d max_tokens=%d",
+                        self._backend, model, len(docs), len(messages) - 1, effective_max_tokens)
 
             if self._backend == "claude":
                 async with self._client.messages.stream(
                     model=model,
-                    max_tokens=LLM_MAX_TOKENS,
+                    max_tokens=effective_max_tokens,
                     system=RAG_SYSTEM_PROMPT,
                     messages=messages,
                 ) as stream:
@@ -193,7 +219,7 @@ class LLMSynthesizer:
                 response = await self._client.chat.completions.create(
                     model=model,
                     messages=[{"role": "system", "content": RAG_SYSTEM_PROMPT}] + messages,
-                    max_tokens=LLM_MAX_TOKENS,
+                    max_tokens=effective_max_tokens,
                     stream=True,
                 )
                 async for chunk in response:
