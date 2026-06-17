@@ -78,12 +78,47 @@ Models are downloaded automatically on first run and cached in `models_cache/`.
 
 ## Installation
 
+### Option A: Virtual environment (recommended)
+
 ```bash
 # 1. Clone
-git clone https://github.com/<your-username>/<repo>.git
-cd <repo>
+git clone <repo-url>
+cd claude_rag
 
-# 2. Install CPU-only PyTorch first (avoids downloading 2 GB CUDA build)
+# 2. Create & activate virtual environment (isolates from system Python)
+python -m venv .venv
+
+# 3. Install CPU-only PyTorch first (~120 MB instead of ~2 GB CUDA build)
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# 4. Install remaining dependencies
+.venv\Scripts\pip install -r requirements.txt
+
+# 5. Copy & edit config
+copy claude_rag.toml.example claude_rag.toml
+# Edit claude_rag.toml — set your LLM backend, API keys, etc.
+
+# 6. Start
+start_venv.bat
+# Or: .venv\Scripts\python src\server\serve.py
+```
+
+> [!TIP]
+> If behind a proxy, set `HTTP_PROXY` and `HTTPS_PROXY` environment variables before step 3–4:
+> ```bash
+> set HTTP_PROXY=http://<proxy-host>:<port>
+> set HTTPS_PROXY=http://<proxy-host>:<port>
+> ```
+
+> [!NOTE]
+> Embedding models (~800 MB) download on first run to `models_cache/`.
+> Set `HF_HUB_OFFLINE=1` afterwards to skip network checks on startup.
+
+### Option B: Global Python
+
+```bash
+git clone <repo-url>
+cd claude_rag
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # 3. Install remaining Python dependencies
@@ -95,8 +130,8 @@ npm install
 npm run build
 cd ..
 
-# 5. Optional: BM25 hybrid search and better PDF parsing
-pip install rank-bm25 pdfplumber
+# 5. Start
+python src/server/serve.py
 ```
 
 ### Web UI (re)build
@@ -134,15 +169,17 @@ python src/scripts/reingest_fast.py knowledge_base/
 
 ### 3. Start the server
 
-**stdio** (for Claude Desktop on the same machine):
-```bash
-python src/server/stdio.py
-```
-
 **HTTP SSE** (for LAN access):
 ```bash
-python src/server/serve.py              # listens on 0.0.0.0:8765
-python src/server/serve.py --port 9000  # custom port
+start_venv.bat                           # recommended (uses venv)
+# Or:
+.venv\Scripts\python src\server\serve.py  # manual
+python src/server/serve.py --port 9000    # custom port
+```
+
+**stdio** (for Claude Desktop on the same machine):
+```bash
+.venv\Scripts\python src/server/stdio.py
 ```
 
 Graceful shutdown (prevents HNSW index corruption):
@@ -245,12 +282,12 @@ claude_rag/
 
 | Operation | Command |
 |-----------|---------|
-| Start LAN server | `python src/server/serve.py` |
-| Start local server | `python src/server/stdio.py` |
-| Re-index knowledge base | `python src/scripts/reingest_fast.py knowledge_base/` |
-| Clear collections | `python src/scripts/cleanup_collections.py` |
-| Remove stale index entries | `python src/scripts/cleanup_deleted.py --delete` |
-| Run tests | `python -m pytest tests/ -v` |
+| Start LAN server | `.venv\Scripts\python src\server\serve.py` |
+| Start local server | `.venv\Scripts\python src\server\stdio.py` |
+| Re-index knowledge base | `.venv\Scripts\python src\scripts\reingest_fast.py knowledge_base/` |
+| Clear collections | `.venv\Scripts\python src\scripts\cleanup_collections.py` |
+| Remove stale index entries | `.venv\Scripts\python src\scripts\cleanup_deleted.py --delete` |
+| Run tests | `.venv\Scripts\python -m pytest tests/ -v` |
 
 ---
 

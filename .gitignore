@@ -16,6 +16,7 @@ claude_rag.toml
 
 # ── Temp: not fully tested, contains absolute paths ───────────────────────
 start_server.bat
+start_venv.bat
 
 # ── Python ─────────────────────────────────────────────────────────────────
 __pycache__/
